@@ -1,0 +1,25 @@
+BEGIN
+	A: INT = 0;
+	B: INT = 1;
+	C: BYTE = 0;
+	INDEX: INT = 1;
+	LIMIT: INT = 1;
+	PRINT('Enter Fibonacci number count to output :');
+	LIMIT := READ();
+	PRINT('Fibonacci number #');
+	PRINT(INDEX);
+	PRINT(': ');
+	PRINTLN(B);
+	WHILE INDEX < LIMIT DO
+		INDEX := 1 + INDEX;
+		PRINT('Fibonacci number #');
+		PRINT(INDEX);
+		PRINT(': ');
+		IF C == 0 THEN
+			PRINTLN(A := A + B);
+		ELSE
+			PRINTLN(B := A + B);
+		FI
+		C := 1 - C;
+	OD
+END

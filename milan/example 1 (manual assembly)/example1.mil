@@ -1,0 +1,66 @@
+BEGIN
+	A: INT = 4;
+	B: INT = 3;
+	C: INT;
+	C := (A + 5)*(B - 7)
+	PRINT('The result is ') // конкатенацию пока что не поддерживаем (требует динамического выделения памяти в куче)
+	PRINTLN(C) // а здесь неплохо было бы реализовать что-то типа itoa
+END
+
+
++=====================================+
+| Транслируем в ассемблер по правилам |
+|                                     |
+| Вставьте соответствующие части кода |
+| в заготовку "core_snippet.asm" и    |
+| ассемблируйте и слинкуйте код.      |
+|                                     |
+| Код программы собран по правилам    |
+| компиляции (см. "code_parts.txt")   |
++=====================================+
+
+Таблица констант:
+	string1 db 'The result is ', 0x00
+	
+Таблица переменных:
+	A: RESD 1 ; line 2
+	B: RESD 1 ; line 3
+	C: RESD 1 ; line 4
+	
+Код программы (скомпилирован вручную):
+	mov dword [A],4 ; line 2
+	mov dword [B],3 ; line 3
+	; calculate line 5 expression
+	mov dword eax,[A]
+	push eax ; {A}
+	push dword 5 ; {A,5}
+	pop ebx ; {A}
+	pop eax ; {}
+	add eax, ebx
+	push eax ; {A+5}
+	mov dword eax,[B]
+	push eax ; {A+5,B}
+	push dword 7 ; {A+5,B,7}
+	pop ebx ; {A+5,B}
+	pop eax ; {A+5}
+	sub eax, ebx
+	push eax ; {A+5,B-7}
+	pop ebx ; {A+5}, ebx <- B-7
+	pop eax ; {} eax <- A+5
+	mul ebx ; eax <- (A+5)(B-7)
+	push eax ; {(A+5)*(B-7)}
+	; assign value to variable C
+	pop eax
+	mov dword [C], eax
+	push eax
+	; end of expression evaluation
+	pop eax ; ends always with this to clear stack
+	; line 6
+	push dword string1
+	call @print_str ; печатаем нуль-терминированную строку
+	mov dword eax, [C]
+	push eax
+	call @print_int32 ; печатаем число
+	call @print_newline ; новая строка
+	push dword 0 ; возвращаем код 0 (успешно)
+	jmp @quit_program

@@ -1,0 +1,23 @@
+BEGIN
+	A: INT = 4;
+	B: INT = 3;
+	C: INT;
+	C := -(A + -5)*(B + +7)+2*3;
+	IF C > 0 THEN
+		B := C + 5;
+		B := -B;
+		//HALT(1);
+	ELSE 
+		B := - C + 2; // занятно -- если убрать скобки, то выражение вычислится неправильно
+		C := B*B;
+		//HALT(2);
+	FI
+	PRINT('The result is B='); // конкатенацию пока что не поддерживаем (требует динамического выделения памяти в куче)
+	PRINTLN(B); // а здесь неплохо было бы реализовать что-то типа itoa
+	PRINT('The result is C=');
+	PRINTLN(C);
+	PRINT('Enter value A=');
+	A := READ();
+	PRINT('The result is A=');
+	PRINTLN(A);
+END

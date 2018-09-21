@@ -1,0 +1,21 @@
+BEGIN
+	A: INT = 0;
+	B: INT = 1;
+	C: BYTE = 0;
+	INDEX: INT = 1;
+	PRINT('Fibonacci number #');
+	PRINT(INDEX);
+	PRINT(': ');
+	PRINTLN(B);
+	FOR INDEX = 2 TO 20 STEP 2 DO
+		PRINT('Fibonacci number #');
+		PRINT(INDEX);
+		PRINT(': ');
+		IF C == 0 THEN BEGIN
+			PRINTLN(A := A + B);
+		END ELSE BEGIN
+			PRINTLN(B := A + B);
+		END FI
+		C := 1 - C;
+	ROF
+END

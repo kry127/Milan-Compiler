@@ -1,0 +1,8 @@
+*.doc
+*.docx
+*.txt
+*.pdf
+*.code-workspace
+*.exe
+*.obj
+*.bat
