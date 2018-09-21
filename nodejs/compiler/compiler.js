@@ -190,15 +190,6 @@ function dw(parent, precondition = false) {
     this.condition = null
     this.op = null
 }
-// FOR
-function _for(parent) {
-    this.parent = parent
-    this.iterator = null // ? typeof decl
-    this.from = null
-    this.to = null
-    this.step = null
-    this.op = null
-}
 // declaration
 function decl(parent) {
     this.parent = parent
@@ -239,9 +230,17 @@ function func_call(parent) {
     this.func_name = null // function name to call
     this.params = [] // array of parameters
 }
+function func_def(parent) {
+    this.parent.parent
+    this.constant = false
+    this.func_name = null // function name
+    this.type = null // function return type
+    this.params = [] // array of decl's
+    this.op // function operator sequence
+}
 
 // list of node types:
-// seq, ite, dw, decl, assign, op, leaf_const, leaf_var, func_call
+// seq, ite, dw, decl, assign, op, leaf_const, leaf_var, func_call, func_def
 
 // building with that abstract syntax tree
 function astBuilder(lexems) {
@@ -264,19 +263,21 @@ function astBuilder(lexems) {
             case keywords[7]: // for
                 return parseFor(lexems, i+1);
                 break;
+            case keywords[10]: // function
+                return parseFunction(lexems, i+1)
+                break;
             case keywords[8]: // case
             case keywords[1]: // end
             case keywords[3]: // then 
             case keywords[4]: // else
             case keywords[9]: // of
-            case keywords[10]: // function
             case keywords[11]: // fi
             case keywords[12]: // od
             case keywords[13]: // rof
             case keywords[14]: // esac
                 throw "Unexpected keyword " + lexem;
                 break;
-            default:
+            default: // expr or decl
                 // TODO: expecting this is a variable (NOT constant!)
                 if (lexems[i+1] == ":")
                     return parseDecl(lexems, i); // parse declaration
@@ -350,6 +351,8 @@ function astBuilder(lexems) {
         return res
     }
 
+    // end -- parse till string passed as a parameter "end" (';' by default)
+    // type -- expected type of declaration (needed in FOR iterator)
     function parseDecl(lexems, i, end = delimiter, type=null) {
         ret = new decl(null)
         ret.varname = lexems[i] // check it is variable
@@ -404,6 +407,7 @@ function astBuilder(lexems) {
         var bracketCount = 1;
         while (bracketCount > 0) {
             i++
+            if (i >= lexems.length) return -1; // not found
             switch (lexems[i]) {
             case brOpen:
                 bracketCount++
@@ -411,9 +415,6 @@ function astBuilder(lexems) {
             case brClose:
                 bracketCount--
                 break
-            default:
-                if (types.indexOf(lexems[i]) > -1 || keywords.indexOf(lexems[i]) > -1)
-                    throw "Unexpected keyword in expression."
             }
         }
         return i
@@ -743,7 +744,63 @@ function astBuilder(lexems) {
             last_index: j
         }
     }
+    
+    // parsing function call
+    // expecting parsing behind "FUNCTION" keyword
+    function parseFunction(lexems, i) {
+        var ret = func_def(null)
+        let isvar = checkVarname(lexems[i]) // check first lexem to be function name
+        if (!isvar) {
+            throw "Function name " + lexems[i] + " is invalid."
+        }
+        ret.func_name = lexems[i]
+        if ( lexems [i + 1] != "(") {
+            throw "Parameter list in function definition " + lexems[i] + " expected!";
+        }
+        let right_bracket = findBalancingBracketIndex(lexems, i + 1)
+        if (right_bracket == -1) throw "No balancing bracket found for function declaration parameters"
+        i = i + 2;
+        var res;
+        for (j = i; k < right_bracket; j++) {
+            switch (lexems[j]) {
+            case '(': // skip bracketing
+                j = findBalancingBracketIndex(lexems, j); // plus one during for!
+                break;
+            case ',':
+                res = parseDecl(lexems, i, ',')
+                ret.params.push(res.node)
+                j = res.last_index // plus one during for!
+                i = j + 1
+                break;
+            case ')':
+                res = parseDecl(lexems, i, ')')
+                ret.params.push(res.node)
+                j = res.last_index // plus one during for!
+                i = j + 1
+                break
+            }
+        }
+        // check if there is defined return type of function
+        i = right_bracket + 1
+        ret.type = null
+        if (lexems[i] == ":") {
+            let type_id = types.indexOf(lexems[i + 1])
+            if (type_id == -1)
+                throw "Unknown return type of function declaration " + ret.func_name + "!"
+            ret.type = lexems[i + 1]
+            i = i + 2
+        }
+        // parse function body as usual -- as operator
+        res = parseOp(lexems, i)
+        ret.op = res.node
+        return {
+            node: ret,
+            last_index: res.last_index
+        }
+        
+    }
 
+    // parsing program as a single operator
     return parseOp(lexems, 0) 
 }
 
@@ -918,6 +975,39 @@ function semanticTreeBuilder(ast) {
             ast.params[k] = semanticTreeBuilder(ast.params[k]);
             ast.params[k].parent = ast
         }
+        return ast
+    } else if (ast instanceof func_def) {
+        // this is a combo of "dw", "decl" and "func_call"
+        // dw part (has body)
+        ast.op = semanticTreeBuilder(ast.op)
+        ast.op.parent = ast.condition.parent = ast
+        // decl part (function can be declared only within BEGIN...END statement)
+        if (!(ast.parent instanceof seq))
+            throw "Variable declaration must appear in begin ... end statement!"
+        // func_call part
+
+        // if there are nonzero params count, add them to the "op" scope
+        if (ast.params.length > 0) {
+            if (ast.op instanceof seq) {
+                var tmp = ast.op.seq
+                ast.op.seq = ast.params
+                ast.op.seq.push(...tmp)
+            } else {
+                var tmp = ast.op
+                ast.op = new seq(ast)
+                ast.seq = ast.params
+                ast.op.seq.push(tmp)
+                tmp.parent = ast.op
+            }
+            // make an extra seq to make variables visible
+            for (var k = 0; k < ast.params.length; k++) {
+                ast.params[k] = semanticTreeBuilder(ast.params[k]);
+                ast.params[k].parent = ast.op
+                if (!(ast.params[k] instanceof decl))
+                    throw "All passing parameters to function should be parameter declaration!"
+            }
+        }
+        return ast
     }
     return ast
 }
