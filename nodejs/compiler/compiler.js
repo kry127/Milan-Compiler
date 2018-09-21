@@ -967,6 +967,7 @@ function semanticTreeBuilder(ast) {
             }
             if (idx != -1) {
                 ast.type = parent.seq[idx].type // copy type property
+                ast.ref = parent.seq[idx] // also copy the reference to the found decl
                 return ast // finally, found closest one
             }
         }
@@ -1052,25 +1053,6 @@ function astAssembly(ast) {
             this.n++
             this.table.push(ast)
             return ast.asm_name
-        },
-        find: function(ast) { // should be instance of leaf_var
-            if (!(ast instanceof leaf_var))
-                throw "Non variable statement treated as var"
-            // strategy: find nearest decl within begin ... end block (parent = seq)
-            var parent = ast
-            while (true) {
-                parent = parent.parent
-                while (!(parent instanceof seq)) {
-                    if (parent == null)
-                        throw "No declaration found for variable '" + ast.varname + "'!"
-                    parent = parent.parent
-                }
-                // parent found, try to find in this scope declaration
-                let idx = this.table.findIndex(item=>item.parent==parent && item.varname== ast.varname)
-                if (idx != -1) {
-                    return this.table[idx] // finally, found closest one
-                }
-            }
         }
     }
     var funcs = {
@@ -1095,7 +1077,7 @@ function astAssembly(ast) {
                 if (func_param_count != actual_param_count) return false;
                 for (var k = 0; k < func_param_count; k++) {
                     let type = (ast.params[k] instanceof leaf_var)
-                        ? vars.find(ast.params[k]).type
+                        ? ast.params[k].ref.type
                         : ast.params[k].type
                     if (type != row[1][k])
                         return false;
@@ -1114,6 +1096,7 @@ function astAssembly(ast) {
     //  3. vars -- managing variable table
     //    3.1. vars.register(decl) -- registers variable declaration and returns assembly alias
     //    3.2. vars.find(leaf_var) -- finds closest symbolic declaration and returns assembly alias
+    //         !not used anymore! the reference saved during semantic analysis
 
     // assembly accumulator
     var assembly = []
@@ -1125,7 +1108,7 @@ function astAssembly(ast) {
             let var_type = types.indexOf(type)
             let val_type = types.indexOf(expr.type)
             if (expr instanceof leaf_var)
-                val_type = types.indexOf(vars.find(expr).type)
+                val_type = types.indexOf(expr.ref.type)
             if (var_type == val_type)
                 return; // no cast operations required
             switch (var_type) {
@@ -1224,7 +1207,7 @@ function astAssembly(ast) {
             default: throw "Unknown type detected"
             }
         } else if (ast instanceof assign) {
-            let var_decl = vars.find(ast.varname)
+            let var_decl = ast.varname.ref
             let asm_varname = var_decl.asm_name
             let var_type =  types.indexOf(var_decl.type)
             // !!! earlier it was "ast.type", and it was fatal error
@@ -1393,7 +1376,7 @@ function astAssembly(ast) {
             case 4:  pushStr("mov eax," + consts.next(ast.value)); break; // STRING
             }
         } else if (ast instanceof leaf_var) {
-            let var_decl = vars.find(ast)
+            let var_decl = ast.ref
             let type = types.indexOf(var_decl.type)
             let asm_varname = var_decl.asm_name
             switch (type) {
