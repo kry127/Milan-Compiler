@@ -2,7 +2,7 @@ BEGIN
 	A: INT = 0;
 	B: INT = 1;
 	C: BYTE = 0;
-	INDEX: INT = 1;
+	INDEX: INT = 5;
 	PRINT('Fibonacci number #');
 	PRINT(INDEX);
 	PRINT(': ');

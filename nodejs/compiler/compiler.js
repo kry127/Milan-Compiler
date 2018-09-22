@@ -725,7 +725,7 @@ function astBuilder(lexems) {
             do_while.op.seq.push(op_seq)
         }
 
-        var ass = new assign(do_while.op.seq)
+        var ass = new assign(do_while.op)
         ass.varname = getIterVar(ass)
         ass.expr = new op(do_while.op, ops[3].op)
         ass.expr.lop = getIterVar(ass.expr)
@@ -843,6 +843,8 @@ function semanticTreeBuilder(ast) {
             throw "Variable declaration must appear in begin ... end statement!"
         return ast
     } else if (ast instanceof assign) {
+        ast.varname = semanticTreeBuilder(ast.varname)
+        ast.varname.parent = ast
         ast.expr = semanticTreeBuilder(ast.expr)
         ast.expr.parent = ast
         ast.type = ast.expr.type

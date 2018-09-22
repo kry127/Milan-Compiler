@@ -257,7 +257,7 @@ mov dword [var1], eax
 mov eax, 0
 and eax, 000000FFh
 mov byte [var2], al
-mov eax, 1
+mov eax, 5
 mov dword [var3], eax
 mov eax,const0
 push eax
