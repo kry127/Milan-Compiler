@@ -37,6 +37,43 @@ var delimiter = ";"
 var allowed_varname_first = "_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 var allowed_varname_chars = "_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
+// table of extern functions definition
+// if local equivalent cannot be found, search in the external functions table
+var extern_funcs = {
+    n : 0,
+    // func, types, asm_alias
+    table: [
+        ["PRINT", [types[2]], null, "@print_int32"],
+        ["PRINT", [types[4]], null, "@print_str"],
+        ["PRINTLN", [types[2]], null, "@println_int32"],
+        ["PRINTLN", [types[4]], null, "@println_str"],
+        ["READ", [], types[2], "@scan_int32"],
+        ["HALT", [], null, "@quit_program"],
+        ["HALT", [types[2]], null, "@quit_program"]
+    ],
+    next: function(ast) { // pass function call to typecheck parameters
+        if (! ast instanceof func_call)
+            throw "Typechecking function call of not function is unacceptable"
+        let funcIndex = this.table.findIndex(row=>{
+            if (row[0]!=ast.func_name) return false;
+            let func_param_count = ast.params.length
+            let actual_param_count = row[1].length
+            if (func_param_count != actual_param_count) return false;
+            for (var k = 0; k < func_param_count; k++) {
+                let type = (ast.params[k] instanceof leaf_var)
+                    ? ast.params[k].ref.type
+                    : ast.params[k].type
+                if (type != row[1][k])
+                    return false;
+            }
+            return true;
+        })
+        if (funcIndex == -1)
+            throw "No suitable prototype for function '" + ast.func_name + "' with such parameters."
+        return this.table[funcIndex][3]
+    }
+}
+
 // lexer
 // TODO add semantic analysis (keyword, variable, constant (INT, FLOAT, STRING), operation, delimiter)
 function lexer(src) {
@@ -231,7 +268,7 @@ function func_call(parent) {
     this.params = [] // array of parameters
 }
 function func_def(parent) {
-    this.parent.parent
+    this.parent = parent
     this.constant = false
     this.func_name = null // function name
     this.type = null // function return type
@@ -748,7 +785,7 @@ function astBuilder(lexems) {
     // parsing function call
     // expecting parsing behind "FUNCTION" keyword
     function parseFunction(lexems, i) {
-        var ret = func_def(null)
+        var ret = new func_def(null)
         let isvar = checkVarname(lexems[i]) // check first lexem to be function name
         if (!isvar) {
             throw "Function name " + lexems[i] + " is invalid."
@@ -758,10 +795,11 @@ function astBuilder(lexems) {
             throw "Parameter list in function definition " + lexems[i] + " expected!";
         }
         let right_bracket = findBalancingBracketIndex(lexems, i + 1)
-        if (right_bracket == -1) throw "No balancing bracket found for function declaration parameters"
+        if (right_bracket == -1)
+            throw "No balancing bracket found for function declaration parameters"
         i = i + 2;
         var res;
-        for (j = i; k < right_bracket; j++) {
+        for (j = i; j <= right_bracket; j++) {
             switch (lexems[j]) {
             case '(': // skip bracketing
                 j = findBalancingBracketIndex(lexems, j); // plus one during for!
@@ -769,19 +807,20 @@ function astBuilder(lexems) {
             case ',':
                 res = parseDecl(lexems, i, ',')
                 ret.params.push(res.node)
+                res.node.parent = ret
                 j = res.last_index // plus one during for!
                 i = j + 1
                 break;
             case ')':
                 res = parseDecl(lexems, i, ')')
                 ret.params.push(res.node)
+                res.node.parent = ret
                 j = res.last_index // plus one during for!
                 i = j + 1
-                break
+                break;
             }
         }
         // check if there is defined return type of function
-        i = right_bracket + 1
         ret.type = null
         if (lexems[i] == ":") {
             let type_id = types.indexOf(lexems[i + 1])
@@ -793,6 +832,7 @@ function astBuilder(lexems) {
         // parse function body as usual -- as operator
         res = parseOp(lexems, i)
         ret.op = res.node
+        ret.op.parent = ret
         return {
             node: ret,
             last_index: res.last_index
@@ -839,8 +879,8 @@ function semanticTreeBuilder(ast) {
         ast.value = semanticTreeBuilder(ast.value)
         if (ast.value) ast.value.parent = ast
         // by the way -- check parent has type seq (this is the only allowed place to declare variables)
-        if (!(ast.parent instanceof seq))
-            throw "Variable declaration must appear in begin ... end statement!"
+        if (!(ast.parent instanceof seq) && !(ast.parent instanceof func_def))
+            throw "Variable declaration must appear in begin ... end statement, or as a function parameter!"
         return ast
     } else if (ast instanceof assign) {
         ast.varname = semanticTreeBuilder(ast.varname)
@@ -944,19 +984,28 @@ function semanticTreeBuilder(ast) {
         return ast
     } else if (ast instanceof leaf_var) {
         // strategy: find nearest decl within begin ... end block (parent = seq)
+        // decls also can be found in the function definition parameters!
         var parent = ast
         while (true) {
+            var seq_to_check;
             parent = parent.parent
-            while (!(parent instanceof seq)) {
+            while (true) {
                 if (parent == null)
                     throw "No declaration found for variable '" + ast.varname + "'!"
+                else if (parent instanceof seq) {
+                    seq_to_check = parent.seq;
+                    break;
+                } else if (parent instanceof func_def) {
+                    seq_to_check = parent.params;
+                    break;
+                }
                 parent = parent.parent
             }
             // parent found, try to find in this scope declaration
             var idx = -1
-            for (var k = 0; k < parent.seq.length; k++) {
-                if (parent.seq[k] instanceof decl) {
-                    let var_decl = parent.seq[k]
+            for (var k = 0; k < seq_to_check.length; k++) {
+                if (seq_to_check[k] instanceof decl) {
+                    let var_decl = seq_to_check[k]
                     if (var_decl.varname == ast.varname) {
                         if (idx == -1)
                             idx = k
@@ -968,8 +1017,8 @@ function semanticTreeBuilder(ast) {
                 }
             }
             if (idx != -1) {
-                ast.type = parent.seq[idx].type // copy type property
-                ast.ref = parent.seq[idx] // also copy the reference to the found decl
+                ast.type = seq_to_check[idx].type // copy type property
+                ast.ref = seq_to_check[idx] // also copy the reference to the found decl
                 return ast // finally, found closest one
             }
         }
@@ -981,35 +1030,26 @@ function semanticTreeBuilder(ast) {
         return ast
     } else if (ast instanceof func_def) {
         // this is a combo of "dw", "decl" and "func_call"
-        // dw part (has body)
-        ast.op = semanticTreeBuilder(ast.op)
-        ast.op.parent = ast.condition.parent = ast
         // decl part (function can be declared only within BEGIN...END statement)
         if (!(ast.parent instanceof seq))
             throw "Variable declaration must appear in begin ... end statement!"
         // func_call part
 
         // if there are nonzero params count, add them to the "op" scope
-        if (ast.params.length > 0) {
-            if (ast.op instanceof seq) {
-                var tmp = ast.op.seq
-                ast.op.seq = ast.params
-                ast.op.seq.push(...tmp)
-            } else {
-                var tmp = ast.op
-                ast.op = new seq(ast)
-                ast.seq = ast.params
-                ast.op.seq.push(tmp)
-                tmp.parent = ast.op
-            }
-            // make an extra seq to make variables visible
-            for (var k = 0; k < ast.params.length; k++) {
-                ast.params[k] = semanticTreeBuilder(ast.params[k]);
-                ast.params[k].parent = ast.op
-                if (!(ast.params[k] instanceof decl))
-                    throw "All passing parameters to function should be parameter declaration!"
-            }
+        // TODO is that really indeed needed? what about value passing!
+        // with dispersed semantics it would be hard to recover context, what declaration
+        // belongs to body, and what declaration belongs to passing parameters
+
+        // make an extra seq to make variables visible
+        for (var k = 0; k < ast.params.length; k++) {
+            ast.params[k] = semanticTreeBuilder(ast.params[k]);
+            ast.params[k].parent = ast
+            if (!(ast.params[k] instanceof decl))
+                throw "All passing parameters to function should be parameter declaration!"
         }
+        // dw part (has body)
+        ast.op = semanticTreeBuilder(ast.op)
+        ast.op.parent = ast
         return ast
     }
     return ast
@@ -1055,40 +1095,6 @@ function astAssembly(ast) {
             this.n++
             this.table.push(ast)
             return ast.asm_name
-        }
-    }
-    var funcs = {
-        n : 0,
-        // func, types, asm_alias
-        table: [
-            ["PRINT", [types[2]], null, "@print_int32"],
-            ["PRINT", [types[4]], null, "@print_str"],
-            ["PRINTLN", [types[2]], null, "@println_int32"],
-            ["PRINTLN", [types[4]], null, "@println_str"],
-            ["READ", [], types[2], "@scan_int32"],
-            ["HALT", [], null, "@quit_program"],
-            ["HALT", [types[2]], null, "@quit_program"]
-        ],
-        next: function(ast) { // pass function call to typecheck parameters
-            if (! ast instanceof func_call)
-                throw "Typechecking function call of not function is unacceptable"
-            let funcIndex = this.table.findIndex(row=>{
-                if (row[0]!=ast.func_name) return false;
-                let func_param_count = ast.params.length
-                let actual_param_count = row[1].length
-                if (func_param_count != actual_param_count) return false;
-                for (var k = 0; k < func_param_count; k++) {
-                    let type = (ast.params[k] instanceof leaf_var)
-                        ? ast.params[k].ref.type
-                        : ast.params[k].type
-                    if (type != row[1][k])
-                        return false;
-                }
-                return true;
-            })
-            if (funcIndex == -1)
-                throw "No suitable prototype for function '" + ast.func_name + "' with such parameters."
-            return this.table[funcIndex][3]
         }
     }
 
@@ -1408,13 +1414,13 @@ function astAssembly(ast) {
             }
             // problem -- we need to somehow cast variables to suitable variables!
             // because of multiple pushes, the only way -- AST modification
-            var asm_func = funcs.next(ast)
+            var asm_func = extern_funcs.next(ast)
             pushStr("call " + asm_func) // call function with pushed parameters
         }
     }
 
     traverseAST(ast)
-    return [assembly, consts, vars, funcs]
+    return [assembly, consts, vars, extern_funcs]
 }
 
 // the very last step
