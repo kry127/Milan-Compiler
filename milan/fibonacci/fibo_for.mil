@@ -1,4 +1,8 @@
 BEGIN
+	FUNCTION INCREMENT(VAL : INT) : INT
+	BEGIN
+		VAL := VAL + 1
+	END
 	A: INT = 0;
 	B: INT = 1;
 	C: BYTE = 0;
