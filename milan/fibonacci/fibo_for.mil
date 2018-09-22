@@ -20,6 +20,7 @@ BEGIN
 		END ELSE BEGIN
 			PRINTLN(B := A + B);
 		END FI
-		C := 1 - C;
+		C := - C;
+		INCREMENT(C);
 	ROF
 END

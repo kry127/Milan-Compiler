@@ -39,10 +39,10 @@ var allowed_varname_chars = "_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWX
 
 // table of extern functions definition
 // if local equivalent cannot be found, search in the external functions table
-var extern_funcs = {
+var funcs = {
     n : 0,
     // func, types, asm_alias
-    table: [
+    ext_table: [
         ["PRINT", [types[2]], null, "@print_int32"],
         ["PRINT", [types[4]], null, "@print_str"],
         ["PRINTLN", [types[2]], null, "@println_int32"],
@@ -51,10 +51,15 @@ var extern_funcs = {
         ["HALT", [], null, "@quit_program"],
         ["HALT", [types[2]], null, "@quit_program"]
     ],
+    table : [],
     next: function(ast) { // pass function call to typecheck parameters
         if (! ast instanceof func_call)
             throw "Typechecking function call of not function is unacceptable"
-        let funcIndex = this.table.findIndex(row=>{
+        if (ast.ref != null) {
+            // implement as variable style
+            throw "NOT IMPLEMENTED YET (implement function registration "+ast.func_name+" at funcs table)"
+        }
+        let funcIndex = this.ext_table.findIndex(row=>{
             if (row[0]!=ast.func_name) return false;
             let func_param_count = ast.params.length
             let actual_param_count = row[1].length
@@ -70,7 +75,7 @@ var extern_funcs = {
         })
         if (funcIndex == -1)
             throw "No suitable prototype for function '" + ast.func_name + "' with such parameters."
-        return this.table[funcIndex][3]
+        return this.ext_table[funcIndex][3]
     }
 }
 
@@ -986,8 +991,10 @@ function semanticTreeBuilder(ast) {
         // strategy: find nearest decl within begin ... end block (parent = seq)
         // decls also can be found in the function definition parameters!
         var parent = ast
+        var child
         while (true) {
             var seq_to_check;
+            child = parent // save old parent for order analysis
             parent = parent.parent
             while (true) {
                 if (parent == null)
@@ -999,16 +1006,24 @@ function semanticTreeBuilder(ast) {
                     seq_to_check = parent.params;
                     break;
                 }
+                child = parent
                 parent = parent.parent
             }
             // parent found, try to find in this scope declaration
             var idx = -1
+            var repeat_idx = -1
+            var child_index = seq_to_check.indexOf(child)
+            if (parent instanceof func_def) // for function definition the arguments is always
+                child_index = seq_to_check.length // goes afterwards the reference
             for (var k = 0; k < seq_to_check.length; k++) {
                 if (seq_to_check[k] instanceof decl) {
                     let var_decl = seq_to_check[k]
                     if (var_decl.varname == ast.varname) {
-                        if (idx == -1)
-                            idx = k
+                        if (repeat_idx == -1) {
+                            repeat_idx = k
+                            if (k < child_index)
+                                idx = k // if it appeared earlier than the reference request, it's OK
+                        }
                         else {
                             throw "Multiple declaration of variable " + ast.varname + " detected!"
                             // maybe we can be less strict and allow redefinitions?
@@ -1023,9 +1038,80 @@ function semanticTreeBuilder(ast) {
             }
         }
     } else if (ast instanceof func_call) {
+        // basic one -- the first step is to semantically traverse parameters
         for (var k = 0; k < ast.params.length; k++) {
             ast.params[k] = semanticTreeBuilder(ast.params[k]);
             ast.params[k].parent = ast
+        }
+        // the same story as with leaf_var. Searching for local function definitions
+        var parent = ast
+        var child
+        while (true) {
+            child = parent // save old parent for order analysis
+            parent = parent.parent
+            if (parent == null) {
+                // well, check the function call in externals instead
+                // found this in assembly part. If no implementation found, throws error
+                var asm_func = funcs.next(ast)
+                break;
+            }
+            while (!(parent instanceof seq)) {
+                child = parent
+                parent = parent.parent
+            }
+            // parent found, try to find in this scope function definition
+            var idx = -1
+            var repeat_idx = -1
+            var child_index = parent.seq.indexOf(child)
+            for (var k = 0; k < parent.seq.length; k++) {
+                if (parent.seq[k] instanceof func_def) {
+                    // ast -> func_call, fdef -> func_def
+                    let fdef = parent.seq[k]
+                    let name_match = fdef.func_name == ast.func_name // check name is matching
+                    // if name didn't match, just go further
+                    if (!name_match) continue
+                    var parameter_match = true // with parameters it could be much worse D:
+                    // assume there WILL be parameters by default as in C language
+                    var w = 0
+                    for (;w < ast.params.length; w++) {
+                        // assuming type was inferred earlier
+                        let idx1 = types.indexOf(fdef.params[w].type)
+                        let idx2 = types.indexOf(ast.params[w].type)
+                        // check that type idx2 can be cast to idx1
+                        // now, BYTE, WORD and INT are compatible, else must be equal
+                        // ideally: add FLOAT to the listed below, and that all could be cast to STRING
+                        let can_be_cast = idx2 <= 2 && idx1 <= 2 || idx1 == idx2
+                        if (!can_be_cast) {
+                            parameter_match = false
+                            break;
+                        }
+                    }
+                    // if parameter didn't match, just go further
+                    if (!parameter_match) continue
+                    if (repeat_idx == -1) {
+                        repeat_idx = k
+                        if (k < child_index) {
+                            idx = k // if it appeared earlier than the reference request, it's OK
+                            // copy the rest of by-default parameters
+                            for(;w < fdef.params.length;w++) {
+                                if (fdef.params[w].value != null) {
+                                    ast.params.push(fdef.params[w].value)
+                                } else {
+                                    throw "No default value for parameter" + fdef.params[w].varname + " in function " + fdef.func_name + " during function call!"
+                                }
+                            }
+                        }
+                    }
+                    else {
+                        throw "Multiple declaration of function " + ast.varname + " detected!"
+                        // maybe we can be less strict and allow redefinitions?
+                    }
+                }
+            }
+            if (idx != -1) {
+                ast.ref = parent.seq[idx] // copy the reference to the found func_def
+                return ast // finally, found closest one
+            }
         }
         return ast
     } else if (ast instanceof func_def) {
@@ -1414,13 +1500,13 @@ function astAssembly(ast) {
             }
             // problem -- we need to somehow cast variables to suitable variables!
             // because of multiple pushes, the only way -- AST modification
-            var asm_func = extern_funcs.next(ast)
+            var asm_func = funcs.next(ast)
             pushStr("call " + asm_func) // call function with pushed parameters
         }
     }
 
     traverseAST(ast)
-    return [assembly, consts, vars, extern_funcs]
+    return [assembly, consts, vars, funcs]
 }
 
 // the very last step
