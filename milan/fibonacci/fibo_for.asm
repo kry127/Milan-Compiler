@@ -319,11 +319,14 @@ call @println_int32
 jmp5:
 mov eax,0
 mov byte al,[var2]
-push eax
-mov eax, 1
-pop ebx
-sub eax,ebx
+mov ebx,0
+sub ebx,eax
+xchg eax,ebx
 mov byte [var2], al
+mov eax,0
+mov byte al,[var2]
+push eax
+call func0
 mov eax, 2
 push eax
 mov dword eax,[var4]

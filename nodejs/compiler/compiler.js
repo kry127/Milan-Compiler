@@ -12,6 +12,14 @@ const linker_path =  'C://Users//kry127//Desktop//MILAN//asm//linker.bat'
 
 // language keywords description
 var types = ["BYTE", "WORD", "INT", "FLOAT", "STRING"]
+// check that type idx2 can be cast to idx1
+// now, BYTE, WORD and INT are compatible, else must be equal
+// ideally: add FLOAT to the listed below, and that all could be cast to STRING
+function can_be_cast(type1, type2) {
+    let idx1 = types.indexOf(type1)
+    let idx2 = types.indexOf(type2)
+    return idx2 <= 2 && idx1 <= 2 || idx1 == idx2
+}
 var keywords = ["BEGIN", "END", "IF", "THEN", "ELSE",  "DO", "WHILE", "FOR", "CASE", "OF", "FUNCTION"
                 , "FI", "OD", "ROF", "ESAC", "TO", "STEP"]
 var ops = [
@@ -57,17 +65,22 @@ var funcs = {
             throw "Typechecking function call of not function is unacceptable"
         if (ast.ref != null) {
             // implement as variable style
-            throw "NOT IMPLEMENTED YET (implement function registration "+ast.func_name+" at funcs table)"
+            return this.register(ast.ref)
         }
+        if (ast.ext_ref != null) {
+            return ast.ext_ref[3] // already searched, see below
+        }
+        // else search in externals
         let funcIndex = this.ext_table.findIndex(row=>{
-            if (row[0]!=ast.func_name) return false;
+            if (row[0]!=ast.func_name) return false; // name didn't match
             let func_param_count = ast.params.length
             let actual_param_count = row[1].length
-            if (func_param_count != actual_param_count) return false;
+            if (func_param_count != actual_param_count) return false; // length didn't match
             for (var k = 0; k < func_param_count; k++) {
                 let type = (ast.params[k] instanceof leaf_var)
                     ? ast.params[k].ref.type
                     : ast.params[k].type
+                // we shoud use here can_we_cast in my opinion
                 if (type != row[1][k])
                     return false;
             }
@@ -75,7 +88,32 @@ var funcs = {
         })
         if (funcIndex == -1)
             throw "No suitable prototype for function '" + ast.func_name + "' with such parameters."
+        ast.ext_ref = this.ext_table[funcIndex]
         return this.ext_table[funcIndex][3]
+    },
+    register: function(ast) { // should be instance of func_def
+        if (!(ast instanceof func_def))
+            throw "Not function definition statement registered as var"
+        let idx = this.table.findIndex(item=> {
+            if (item.parent!=ast.parent) return false // didn't match parent
+            if (item.func_name != ast.func_name) return false // didn't match name
+            if (item.params.length != ast.params.length) return false // didn't match parameters count
+            // check parameters compatibility
+            for (let k = 0; k < item.params.length; k++) {
+                if (item.params[k].type != ast.params[k].type)
+                    return false;
+            }
+            return true; // matches by all criteria
+        })
+        if (idx != -1) {
+            // this is not an error anymore, in semantic graph we checked explicity of the definitions
+            return ast.asm_name // it's recomended to do this directly :)
+        }
+        // register function definition here
+        ast.asm_name = "func" + this.n
+        this.n++
+        this.table.push(ast)
+        return ast.asm_name
     }
 }
 
@@ -1075,13 +1113,8 @@ function semanticTreeBuilder(ast) {
                     var w = 0
                     for (;w < ast.params.length; w++) {
                         // assuming type was inferred earlier
-                        let idx1 = types.indexOf(fdef.params[w].type)
-                        let idx2 = types.indexOf(ast.params[w].type)
-                        // check that type idx2 can be cast to idx1
-                        // now, BYTE, WORD and INT are compatible, else must be equal
-                        // ideally: add FLOAT to the listed below, and that all could be cast to STRING
-                        let can_be_cast = idx2 <= 2 && idx1 <= 2 || idx1 == idx2
-                        if (!can_be_cast) {
+                        let cbc = can_be_cast(fdef.params[w].type, ast.params[w].type)
+                        if (!cbc) { // if cannot cast:
                             parameter_match = false
                             break;
                         }
@@ -1492,15 +1525,26 @@ function astAssembly(ast) {
             }
 
         } else if (ast instanceof func_call) {
+            // if there is reference to defined function, register it
+            if (ast.ref && ast.ref.asm_name == null)
+                funcs.register(ast.ref)
+            if (!ast.ref)
+                funcs.next(ast)
             // traverse arguments in reverse, then call function
             for (k = ast.params.length - 1; k >= 0; k--) {
                 traverseAST(ast.params[k])
                 // we can add cast here!
+                // TODO make the same for external symbol!!
+                if (ast.ref) {
+                    cast(ast.params[k], ast.ref.params[k].type)
+                } else if (ast.ext_ref) {
+                    cast(ast.params[k], ast.ext_ref[1][k])
+                }
                 pushStr("push eax")
             }
             // problem -- we need to somehow cast variables to suitable variables!
             // because of multiple pushes, the only way -- AST modification
-            var asm_func = funcs.next(ast)
+            var asm_func = ast.ref ? ast.ref.asm_name:ast.ext_ref[3];
             pushStr("call " + asm_func) // call function with pushed parameters
         }
     }
