@@ -323,10 +323,13 @@ mov ebx,0
 sub ebx,eax
 xchg eax,ebx
 mov byte [var2], al
+mov eax, 1
+push eax
 mov eax,0
 mov byte al,[var2]
-push eax
-call func0
+pop ebx
+add eax,ebx
+mov byte [var2], al
 mov eax, 2
 push eax
 mov dword eax,[var4]
