@@ -21,24 +21,24 @@ function can_be_cast(type1, type2) {
     return idx2 <= 2 && idx1 <= 2 || idx1 == idx2
 }
 var keywords = ["BEGIN", "END", "IF", "THEN", "ELSE",  "DO", "WHILE", "FOR", "CASE", "OF", "FUNCTION"
-                , "FI", "OD", "ROF", "ESAC", "TO", "STEP"]
+                , "FI", "OD", "ROF", "ESAC", "TO", "DOWNTO", "STEP"]
 var ops = [
-    {op: "*", priority: 0, assoc: 0},
-    {op: "\\", priority: 0, assoc: 1},
-    {op: "%", priority: 0, assoc: 1},
-    {op: "+", priority: 1, assoc: 0},
-    {op: "-", priority: 1, assoc: 1},
-    {op: "==", priority: 2, assoc: 0},
-    {op: "!=", priority: 2, assoc: 0},
-    {op: ">", priority: 2, assoc: 0},
-    {op: "<", priority: 2, assoc: 0},
-    {op: ">=", priority: 2, assoc: 0},
-    {op: "<=", priority: 2, assoc: 0},
-    {op: "NOT", priority: 3, assoc: 0},
-    {op: "AND", priority: 4, assoc: 0},
-    {op: "XOR", priority: 4, assoc: 0},
-    {op: "OR", priority: 5, assoc: 0},
-    {op: ":=", priority: 6, assoc: 2}
+    {op: "*", priority: 0, assoc: 0, unary: 0},
+    {op: "\\", priority: 0, assoc: 1, unary: 0},
+    {op: "%", priority: 0, assoc: 1, unary: 0},
+    {op: "+", priority: 1, assoc: 0, unary: 1},
+    {op: "-", priority: 1, assoc: 1, unary: 1},
+    {op: "==", priority: 2, assoc: 0, unary: 0},
+    {op: "!=", priority: 2, assoc: 0, unary: 0},
+    {op: ">", priority: 2, assoc: 0, unary: 0},
+    {op: "<", priority: 2, assoc: 0, unary: 0},
+    {op: ">=", priority: 2, assoc: 0, unary: 0},
+    {op: "<=", priority: 2, assoc: 0, unary: 0},
+    {op: "NOT", priority: 3, assoc: 0, unary: 1},
+    {op: "AND", priority: 4, assoc: 0, unary: 0},
+    {op: "XOR", priority: 4, assoc: 0, unary: 0},
+    {op: "OR", priority: 5, assoc: 0, unary: 0},
+    {op: ":=", priority: 6, assoc: 2, unary: 0}
 ]
 var brackets = ["(", ")"]
 var delimiter = ";"
@@ -483,7 +483,7 @@ function astBuilder(lexems) {
         }
     }
 
-    function findBalancingBracketIndex(lexems, i, brOpen = "(", brClose = ")") {
+    function findBalancingBracketIndex(lexems, i, brOpen = brackets[0], brClose = brackets[1]) {
         if (lexems[i] != brOpen)
             return i
         var bracketCount = 1;
@@ -505,7 +505,7 @@ function astBuilder(lexems) {
     function parseFuncCall(lexems, i, j) {
         
         let isvar = checkVarname(lexems[i]) // check first lexem to be variable
-        if ( lexems [i + 1] != "(" || lexems[j] != ")") {
+        if ( lexems [i + 1] != brackets[0] || lexems[j] != brackets[1]) {
             throw "Function call " + lexems[i] + " expected";
         }
         if (!isvar) {
@@ -518,7 +518,7 @@ function astBuilder(lexems) {
         var index2 = index1
         while (index2 <= j) {
             switch (lexems[index2]) {
-            case ")":
+            case brackets[1]:
                 // check this is the end
                 if (index2 != j) // but maybe we can do currying? :)
                     throw "Error parsing function call!"
@@ -548,10 +548,10 @@ function astBuilder(lexems) {
         var tmp = i
         while (tmp <= j) {
             switch (lexems[tmp]) {
-            case "(":
+            case brackets[0]:
                 tmp = findBalancingBracketIndex(lexems, tmp) + 1
                 break
-            case ")":
+            case brackets[1]:
                 throw "Brackets unbalanced in expression"
                 break
             default:
@@ -591,8 +591,11 @@ function astBuilder(lexems) {
             var resL = null
             if (best_op_index > i) // not unary operator
                 var resL = parseExpr(lexems, i, best_op_index - 1)
-            else if (["+", "-", "NOT"].indexOf(lexems[best_op_index].toUpperCase()) == -1)
-                throw "Operator " + lexems[best_op_index] + " is a binary operator, not unary."
+            else {
+                let opi =  ops.findIndex(elm=>elm.op == lexems[best_op_index])
+                if (opi == -1 || !ops[opi].unary)
+                    throw "Operator " + lexems[best_op_index] + " is a binary operator, not unary."
+            }
 
             var resR = parseExpr(lexems, best_op_index + 1, j)
             var op_type = lexems[best_op_index]
@@ -617,7 +620,7 @@ function astBuilder(lexems) {
             }
             return ret
         } else { // op not found
-            if (lexems[i] == "(" && lexems[j] == ")") { // unfold brackets and keep going
+            if (lexems[i] == brackets[0] && lexems[j] == brackets[1]) { // unfold brackets and keep going
                 return parseExpr(lexems, i + 1, j - 1)
             }
             // then, there should be function call, const or var expression
@@ -630,7 +633,7 @@ function astBuilder(lexems) {
                 } else {
                     return parseConstant(lexems[i])
                 }
-            } else if ( lexems [i + 1] == "(" && lexems[j] == ")") {
+            } else if ( lexems [i + 1] == brackets[0] && lexems[j] == brackets[1]) {
                 // parse function call here
                 return parseFuncCall(lexems, i, j);
             } else {
@@ -757,15 +760,25 @@ function astBuilder(lexems) {
     function parseFor(lexems, i) {
         //throw "NOT IMPLEMENTED YET"
         // parse as decl till endword "TO"
-        var result = parseDecl(lexems, i, keywords[15], types[2])
+        let to_idx = findNextKeyword(lexems, i, keywords[15]) // TO
+        let downto_idx = findNextKeyword(lexems, i, keywords[16]) // or DOWNTO
+        var downto = (downto_idx == null) ? false : (to_idx > downto_idx) ? false : true
+        var result; // the declaration parse result
+        if (downto) {
+            result = parseDecl(lexems, i, keywords[16], types[2]) // parse till DOWNTO
+        } else {
+            result = parseDecl(lexems, i, keywords[15], types[2]) // parse till TO
+        }
+
         var decl = result.node
         var j = result.last_index
         // parse as expr till "STEP" (if present)
-        var j_step = findNextKeyword(lexems, j, keywords[16])
+        var j_step = findNextKeyword(lexems, j, keywords[17])
         var j_do = findNextKeyword(lexems, j, keywords[5])
+        if (j_do == null) throw "Expected "+keywords[5]+" expression in " + keywords[7] + " expression."
         var to_expr = null
         var step_expr = null
-        if (j_step < j_do) {
+        if (j_step != null && j_step < j_do) {
             // parse TO
             to_expr = parseExpr(lexems, j + 1, j_step - 1)
             j = j_step
@@ -789,7 +802,9 @@ function astBuilder(lexems) {
         
         var do_while = new dw(ret, true) // interpret as while-do
 
-        do_while.condition = new op(do_while, ops[10].op) // <=
+        // ops[9].op -> ">="; ops[10].op -> "<="
+        let comparison_op = downto ? ops[9].op : ops[10].op
+        do_while.condition = new op(do_while, comparison_op)
         let getIterVar = function(parent) {
             let iter_var = new leaf_var(parent)
             iter_var.varname = decl.varname
@@ -809,7 +824,7 @@ function astBuilder(lexems) {
 
         var ass = new assign(do_while.op)
         ass.varname = getIterVar(ass)
-        ass.expr = new op(do_while.op, ops[3].op)
+        ass.expr = new op(do_while.op, downto ? ops[4].op : ops[3].op)
         ass.expr.lop = getIterVar(ass.expr)
         if (step_expr) {
             ass.expr.rop = step_expr
@@ -836,7 +851,7 @@ function astBuilder(lexems) {
             throw "Function name " + lexems[i] + " is invalid."
         }
         ret.func_name = lexems[i]
-        if ( lexems [i + 1] != "(") {
+        if ( lexems [i + 1] != brackets[0]) {
             throw "Parameter list in function definition " + lexems[i] + " expected!";
         }
         let right_bracket = findBalancingBracketIndex(lexems, i + 1)
@@ -957,14 +972,14 @@ function semanticTreeBuilder(ast) {
         if (ast.lop == null) {
             // unary calculations
             switch (ast.op_type) {
-            case "-":
+            case ops[4].op:
                 if (ast.rop.type != "STRING") {
                     ast.rop.value = -ast.rop.value
                 } else throw "Unary minus is not applicable to 'STRING' constant"
-            case "+":
+            case ops[3].op:
                 return ast.rop
                 break;
-            case "NOT":
+            case ops[11].op:
                 if (ast.rop.type != "STRING") {
                     ast.rop.value = ast.rop.value == 0 ? 1 : 0
                 } else throw "Unary 'NOT' is not applicable to 'STRING' constant"
@@ -1388,7 +1403,7 @@ function astAssembly(ast) {
             let op_type = ops.findIndex(row=>row.op==ast.optype)
             if (ast.lop == null) { // unary operator
                 switch (ast.optype) {
-                case "-":
+                case ops[4].op:
                     if (type <= 2) {
                         traverseAST(ast.rop)
                         cast(ast.rop, ast.type)
@@ -1397,11 +1412,11 @@ function astAssembly(ast) {
                         pushStr("xchg eax,ebx")
                     } else throw "FLOAT IS NOT SUPPORTED"
                     break;
-                case "+": // needs to be here to generate assembly code
+                case ops[3].op: // needs to be here to generate assembly code
                     traverseAST(ast.rop)
                     cast(ast.rop, ast.type)
                     break;
-                case "NOT":
+                case ops[11].op:
                     if (type <= 2) {
                         traverseAST(ast.rop)
                         cast(ast.rop, ast.type)

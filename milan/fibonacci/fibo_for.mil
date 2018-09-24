@@ -11,7 +11,7 @@ BEGIN
 	PRINT(INDEX);
 	PRINT(': ');
 	PRINTLN(B);
-	FOR INDEX = 20 TO 30 STEP -2 DO // сделать DOWNTO
+	FOR INDEX = 20 DOWNTO 0 STEP 2 DO // сделать DOWNTO
 		PRINT('Fibonacci number #');
 		PRINT(INDEX);
 		PRINT(': ');

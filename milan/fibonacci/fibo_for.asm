@@ -345,21 +345,18 @@ mov byte al,[var2]
 push eax
 call @println_int32
 mov eax, 2
-mov ebx,0
-sub ebx,eax
-xchg eax,ebx
 push eax
 mov dword eax,[var4]
 pop ebx
-add eax,ebx
+sub eax,ebx
 mov dword [var4], eax
 jmp1:
-mov eax, 30
+mov eax, 0
 push eax
 mov dword eax,[var4]
 pop ebx
 cmp eax, ebx
-jng jmp6
+jnl jmp6
 mov eax,0
 jmp jmp7
 jmp6:
