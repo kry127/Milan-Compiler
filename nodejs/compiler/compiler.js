@@ -81,7 +81,9 @@ var funcs = {
                     ? ast.params[k].ref.type
                     : ast.params[k].type
                 // we shoud use here can_we_cast in my opinion
-                if (type != row[1][k])
+                let cwc = can_be_cast(type, row[1][k])
+                //if (type != row[1][k])
+                if (!cwc)
                     return false;
             }
             return true;
@@ -1030,6 +1032,7 @@ function semanticTreeBuilder(ast) {
         // decls also can be found in the function definition parameters!
         var parent = ast
         var child
+        ast.call_stack_count = 0
         while (true) {
             var seq_to_check;
             child = parent // save old parent for order analysis
@@ -1039,9 +1042,12 @@ function semanticTreeBuilder(ast) {
                     throw "No declaration found for variable '" + ast.varname + "'!"
                 else if (parent instanceof seq) {
                     seq_to_check = parent.seq;
+                    ast.local = false // variable declared in seq is not local
                     break;
                 } else if (parent instanceof func_def) {
                     seq_to_check = parent.params;
+                    ast.local = true // variable declared as func param resides in stack
+                    ast.call_stack_count++ // this counts number of base pointer dereferences
                     break;
                 }
                 child = parent
@@ -1163,6 +1169,8 @@ function semanticTreeBuilder(ast) {
         for (var k = 0; k < ast.params.length; k++) {
             ast.params[k] = semanticTreeBuilder(ast.params[k]);
             ast.params[k].parent = ast
+            ast.params[k].local =true // interpret as local parameter
+            ast.params[k].call_stack_count = 1 // with stack depth 1
             if (!(ast.params[k] instanceof decl))
                 throw "All passing parameters to function should be parameter declaration!"
         }
@@ -1335,7 +1343,6 @@ function astAssembly(ast) {
             }
         } else if (ast instanceof assign) {
             let var_decl = ast.varname.ref
-            let asm_varname = var_decl.asm_name
             let var_type =  types.indexOf(var_decl.type)
             // !!! earlier it was "ast.type", and it was fatal error
             // after moving double word expression into BYTE variable, it affected
@@ -1344,13 +1351,37 @@ function astAssembly(ast) {
             // TODO there is no check in AST for types!
             traverseAST(ast.expr)
             cast(ast.expr, ast.type)
-            switch (var_type) {
-            case 0: pushStr("mov byte [" + asm_varname + "], al"); break;
-            case 1: pushStr("mov word [" + asm_varname + "], ax"); break;
-            case 2: pushStr("mov dword [" + asm_varname + "], eax"); break;
-            case 3: throw "FLOATS NOT SUPPORTED YET!!"; break;
-            case 4: pushStr("mov dword [" + asm_varname + "], eax"); break;
-            default: throw "Unknown type detected"
+            if (!var_decl.local) {
+                let asm_varname = var_decl.asm_name
+                switch (var_type) {
+                case 0: pushStr("mov byte [" + asm_varname + "], al"); break;
+                case 1: pushStr("mov word [" + asm_varname + "], ax"); break;
+                case 2: pushStr("mov dword [" + asm_varname + "], eax"); break;
+                case 3: throw "FLOATS NOT SUPPORTED YET!!"; break;
+                case 4: pushStr("mov dword [" + asm_varname + "], eax"); break;
+                default: throw "Unknown type detected"
+                }
+            } else {
+                let param_index = var_decl.parent.params.indexOf(var_decl) // weird
+                let param_offset = 4*(param_index + 2)
+                if (var_decl.call_stack_count == 1) {
+                    pushStr("mov [ebp + " + param_offset + "],eax")
+                } else if (var_decl.call_stack_count == 2) {
+                    pushStr("mov ebx,[ebp]")
+                    pushStr("mov [ebx + " + param_offset + "],eax")
+                } else if (var_decl.call_stack_count == 3) {
+                    pushStr("mov ebx,[ebp]")
+                    pushStr("mov ebx,[ebp]")
+                    pushStr("mov [ebx + " + param_offset + "],eax")
+                } else {
+                    pushStr("mov ebx,[ebx]")
+                    pushStr("mov ecx, " + String(var_decl.call_stack_count - 2))
+                    let jmp = jump.next()
+                    pushStr(jmp + ":")
+                    pushStr("mov ebx,[ebx]")
+                    pushStr("loop " + jmp)
+                    pushStr("mov [ebx + " + param_offset + "],eax")
+                }
             }
         } else if (ast instanceof op) { // here we end x_x, rip
             let type = types.indexOf(ast.type)
@@ -1505,23 +1536,47 @@ function astAssembly(ast) {
         } else if (ast instanceof leaf_var) {
             let var_decl = ast.ref
             let type = types.indexOf(var_decl.type)
-            let asm_varname = var_decl.asm_name
-            switch (type) {
-            case 0:
-                pushStr("mov eax,0")
-                pushStr("mov byte al,["+asm_varname+"]")
-                break;
-            case 1: 
-                pushStr("mov eax,0")
-                pushStr("mov word ax,["+asm_varname+"]")
-                break;
-            case 2:
-                pushStr("mov dword eax,["+asm_varname+"]")
-                break;
-            case 3: throw "FLOATS NOT SUPPORTED YET!!"; break;
-            case 4: 
-                pushStr("mov dword eax,"+asm_varname+"")
-                break; // STRING (it's just pointer to string)
+            if (ast.local == false) {
+                let asm_varname = var_decl.asm_name
+                switch (type) {
+                case 0:
+                    pushStr("mov eax,0")
+                    pushStr("mov byte al,["+asm_varname+"]")
+                    break;
+                case 1: 
+                    pushStr("mov eax,0")
+                    pushStr("mov word ax,["+asm_varname+"]")
+                    break;
+                case 2:
+                    pushStr("mov dword eax,["+asm_varname+"]")
+                    break;
+                case 3: throw "FLOATS NOT SUPPORTED YET!!"; break;
+                case 4: 
+                    pushStr("mov dword eax,"+asm_varname+"")
+                    break; // STRING (it's just pointer to string)
+                }
+            } else {
+                let param_index = ast.ref.parent.params.indexOf(ast.ref) // weird
+                let param_offset = 4*(param_index + 2)
+                if (ast.call_stack_count == 1) {
+                    pushStr("mov eax,[ebp + " + param_offset + "]")
+                } else if (ast.call_stack_count == 2) {
+                    pushStr("mov ebx,[ebp]")
+                    pushStr("mov eax,[ebx + " + param_offset + "]")
+                } else if (ast.call_stack_count == 3) {
+                    pushStr("mov ebx,[ebp]")
+                    pushStr("mov ebx,[ebp]")
+                    pushStr("mov eax,[ebx + " + param_offset + "]")
+                } else {
+                    pushStr("mov ebx,[ebx]")
+                    pushStr("mov ecx, " + String(ast.call_stack_count - 2))
+                    let jmp = jump.next()
+                    pushStr(jmp + ":")
+                    pushStr("mov ebx,[ebx]")
+                    pushStr("loop " + jmp)
+                    pushStr("mov eax,[ebx + " + param_offset + "]")
+                }
+                //throw "Local variables dereferences are not implemented yet!"
             }
 
         } else if (ast instanceof func_call) {
@@ -1549,7 +1604,30 @@ function astAssembly(ast) {
         }
     }
 
-    traverseAST(ast)
+    traverseAST(ast) // begin with traversing root node
+    pushStr("push dword 0") 
+    pushStr("call @quit_program") // add program finish
+    // then traverse all funcs
+    var new_traversables
+    do {
+        new_traversables = false
+        //funcs.table // array of func_def
+        for (let i = 0; i < funcs.table.length; i++) {
+            var fd = funcs.table[i]
+            if (!fd.traversed) {
+                fd.traversed = true
+                new_traversables = true
+                pushStr(fd.asm_name + ":") 
+                pushStr("push ebp")
+                pushStr("mov ebp,esp")
+                traverseAST(fd.op)
+                pushStr("pop ebp")
+                let offset = 4*(fd.params.length + 1)
+                pushStr("add esp, " + offset)
+                pushStr("jmp [esp - " + offset + "]")
+            }
+        }
+    } while (new_traversables)
     return [assembly, consts, vars, funcs]
 }
 

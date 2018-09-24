@@ -22,6 +22,7 @@ section	.data use32
 	; table of constants begins here
 const0 db 'Fibonacci number #', 0x00
 const1 db ': ', 0x00
+const2 db ', C = ', 0x00
 	; table of constants ends here
 
 section .bss use32
@@ -199,7 +200,15 @@ _@getc_ret:
 	add esp, byte 8
 	jmp [esp - 8]
 	
+@skip_whitespace:
+	call @getc
+	cmp al, 21h
+	jl @skip_whitespace
+	call @ungetc
+	ret
+
 @scan_int32:
+	call @skip_whitespace
 	call @getc
 	cmp al, '-'
 	jnz @scan_int32_as_unsigned
@@ -271,7 +280,7 @@ call @print_str
 mov dword eax,[var1]
 push eax
 call @println_int32
-mov eax, 2
+mov eax, 20
 mov dword [var4], eax
 jmp jmp1
 jmp0:
@@ -305,7 +314,7 @@ pop ebx
 add eax,ebx
 mov dword [var0], eax
 push eax
-call @println_int32
+call @print_int32
 jmp jmp5
 jmp4:
 mov dword eax,[var1]
@@ -315,7 +324,7 @@ pop ebx
 add eax,ebx
 mov dword [var1], eax
 push eax
-call @println_int32
+call @print_int32
 jmp5:
 mov eax,0
 mov byte al,[var2]
@@ -323,21 +332,29 @@ mov ebx,0
 sub ebx,eax
 xchg eax,ebx
 mov byte [var2], al
-mov eax, 1
-push eax
 mov eax,0
 mov byte al,[var2]
-pop ebx
-add eax,ebx
+push eax
+call func0
 mov byte [var2], al
+mov eax,const2
+push eax
+call @print_str
+mov eax,0
+mov byte al,[var2]
+push eax
+call @println_int32
 mov eax, 2
+mov ebx,0
+sub ebx,eax
+xchg eax,ebx
 push eax
 mov dword eax,[var4]
 pop ebx
 add eax,ebx
 mov dword [var4], eax
 jmp1:
-mov eax, 20
+mov eax, 30
 push eax
 mov dword eax,[var4]
 pop ebx
@@ -350,6 +367,20 @@ mov eax,1
 jmp7:
 cmp eax,0
 jnz jmp0
+push dword 0
+call @quit_program
+func0:
+push ebp
+mov ebp,esp
+mov eax, 1
+push eax
+mov eax,[ebp + 8]
+pop ebx
+add eax,ebx
+mov [ebp + 8],eax
+pop ebp
+add esp, 8
+jmp [esp - 8]
 	; your program ends here
 	
 	push dword 0
