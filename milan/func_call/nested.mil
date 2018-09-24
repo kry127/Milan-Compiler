@@ -1,0 +1,35 @@
+BEGIN
+    // проверяем работу замыканий при вложенном вызове функций
+    FUNCTION func1(a : BYTE, b : BYTE)
+    BEGIN
+        FUNCTION func2(c : BYTE, d : BYTE)
+        BEGIN
+            FUNCTION func3(e : BYTE, f : BYTE)
+            BEGIN
+                FUNCTION func4(g : BYTE, h : BYTE)
+                BEGIN
+                    PRINT('a=');
+                    PRINTLN(a);
+                    PRINT('b=');
+                    PRINTLN(b);
+                    PRINT('c=');
+                    PRINTLN(c);
+                    PRINT('d=');
+                    PRINTLN(d);
+                    PRINT('e=');
+                    PRINTLN(e);
+                    PRINT('f=');
+                    PRINTLN(f);
+                    PRINT('g=');
+                    PRINTLN(g);
+                    PRINT('h=');
+                    PRINTLN(h);
+                END
+                func4(300, 301)
+            END
+            func3(99, 102);
+        END
+        func2(5, 6);
+    END
+    func1(4, 3);
+END

@@ -2,8 +2,8 @@
 const fs = require('fs');
 const URL = require('url').URL;
 // project structure variables
-const folder_path = 'C://Users//kry127//Desktop//MILAN//milan//fibonacci//'
-const file_name = "fibo_for"
+const folder_path = 'C://Users//kry127//Desktop//MILAN//milan//func_call//'
+const file_name = "factorial_recursion"
 const src_ext = '.mil'
 const asm_ext = '.asm'
 const exe_ext = ".exe"
@@ -182,7 +182,8 @@ function lexer(src) {
         } else if (chr == '\"') { // string type 2
             j = i + 1
             while (true) {
-                let chr = src.charAt(j).toLowerCase()
+                let chr = src.charAt(j)
+                let prev_chr = src.charAt(j - 1)
                 if (chr == '\"' && prev_chr != '\\')
                     break
                 j = j + 1
@@ -221,7 +222,7 @@ function lexer(src) {
             j = i + 1
             let chr = src.charAt(j).toLowerCase()
             if (chr == "=") {
-                j = j + 1 // for :=, !=, ==, <=, >0
+                j = j + 1 // for :=, !=, ==, <=, >=
             }
             addLexem()
         } else { // single lexem
@@ -518,6 +519,9 @@ function astBuilder(lexems) {
         var index2 = index1
         while (index2 <= j) {
             switch (lexems[index2]) {
+            case brackets[0]:
+                index2 = findBalancingBracketIndex(lexems, index2);
+                break;
             case brackets[1]:
                 // check this is the end
                 if (index2 != j) // but maybe we can do currying? :)
@@ -530,7 +534,7 @@ function astBuilder(lexems) {
                 var param = parseExpr(lexems, index1, index2 - 1)
                 ret.params.push(param)
                 param.parent = ret
-                index1 = index2
+                index1 = index2 + 1
                 break;  
             }
             index2++;
@@ -1144,7 +1148,7 @@ function semanticTreeBuilder(ast) {
                     if (!parameter_match) continue
                     if (repeat_idx == -1) {
                         repeat_idx = k
-                        if (k < child_index) {
+                        if (k <= child_index) { // also allow recursion!
                             idx = k // if it appeared earlier than the reference request, it's OK
                             // copy the rest of by-default parameters
                             for(;w < fdef.params.length;w++) {
@@ -1386,10 +1390,10 @@ function astAssembly(ast) {
                     pushStr("mov [ebx + " + param_offset + "],eax")
                 } else if (var_decl.call_stack_count == 3) {
                     pushStr("mov ebx,[ebp]")
-                    pushStr("mov ebx,[ebp]")
+                    pushStr("mov ebx,[ebx]")
                     pushStr("mov [ebx + " + param_offset + "],eax")
                 } else {
-                    pushStr("mov ebx,[ebx]")
+                    pushStr("mov ebx,[ebp]")
                     pushStr("mov ecx, " + String(var_decl.call_stack_count - 2))
                     let jmp = jump.next()
                     pushStr(jmp + ":")
@@ -1551,7 +1555,7 @@ function astAssembly(ast) {
         } else if (ast instanceof leaf_var) {
             let var_decl = ast.ref
             let type = types.indexOf(var_decl.type)
-            if (ast.local == false) {
+            if (!ast.local) {
                 let asm_varname = var_decl.asm_name
                 switch (type) {
                 case 0:
@@ -1580,10 +1584,10 @@ function astAssembly(ast) {
                     pushStr("mov eax,[ebx + " + param_offset + "]")
                 } else if (ast.call_stack_count == 3) {
                     pushStr("mov ebx,[ebp]")
-                    pushStr("mov ebx,[ebp]")
+                    pushStr("mov ebx,[ebx]")
                     pushStr("mov eax,[ebx + " + param_offset + "]")
                 } else {
-                    pushStr("mov ebx,[ebx]")
+                    pushStr("mov ebx,[ebp]")
                     pushStr("mov ecx, " + String(ast.call_stack_count - 2))
                     let jmp = jump.next()
                     pushStr(jmp + ":")

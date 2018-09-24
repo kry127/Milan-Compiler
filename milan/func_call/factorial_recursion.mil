@@ -1,0 +1,23 @@
+BEGIN
+    PRINTLN("Hello, world! Calculating factorial using recursion :)");
+    FUNCTION fact(n: INT) : INT
+    BEGIN
+        IF (n <= 1) THEN
+            1
+        ELSE
+            n * fact(n-1)
+        FI
+    END
+
+    PRINT('Enter n in bounds [0, 12]:');
+    n : INT = READ();
+    WHILE n < 0 OR n > 12 DO
+        PRINT('Error! Input value n=');
+        PRINT(n);
+        PRINTLN(' does not meet requirement!');
+        PRINT('Enter n in bounds [0, 12]:');
+        n := READ();
+    OD
+    PRINT('The factorial is n!=');
+    PRINTLN(fact());
+END
