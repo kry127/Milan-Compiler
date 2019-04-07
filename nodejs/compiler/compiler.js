@@ -3,8 +3,9 @@ const fs = require('fs');
 const URL = require('url').URL;
 
 // check arguments count
-if (process.argv.length != "2") {
-    console.log(`Usage: ${process.argv[0]} [program_name]`)
+if (process.argv.length != 3) {
+    console.log(`Usage: node compiler.js [program_name]`)
+    console.log(`The program should be called in the directory, where Fmilan source file is located.`)
     console.log(`The file [program_name].mil is the input file for the compiler.\
 Files [program_name].asm, [program_name].o and [program_name].exe are generated \
 during compilation process`)
@@ -12,8 +13,8 @@ during compilation process`)
 }
 
 // project structure variables
-const folder_path = process.cwd();
-const file_name = process.argv[1];
+const folder_path = process.cwd() + '\\';
+const file_name = process.argv[2];
 const src_ext = '.mil'
 const asm_ext = '.asm'
 const exe_ext = ".exe"
