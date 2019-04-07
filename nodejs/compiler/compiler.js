@@ -2,6 +2,14 @@
 const fs = require('fs');
 const URL = require('url').URL;
 
+// check arguments count
+if (process.argv.length != "2") {
+    console.log(`Usage: ${process.argv[0]} [program_name]`)
+    console.log(`The file [program_name].mil is the input file for the compiler.\
+Files [program_name].asm, [program_name].o and [program_name].exe are generated \
+during compilation process`)
+}
+
 // project structure variables
 const folder_path = process.cwd();
 const file_name = process.argv[1];
