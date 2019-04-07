@@ -1,6 +1,7 @@
 // node.js dependencies
 const fs = require('fs');
 const URL = require('url').URL;
+const config = require('./config');
 
 // check arguments count
 if (process.argv.length != 3) {
@@ -15,11 +16,12 @@ during compilation process`)
 // project structure variables
 const folder_path = process.cwd() + '\\';
 const file_name = process.argv[2];
-const src_ext = '.mil'
-const asm_ext = '.asm'
-const exe_ext = ".exe"
-const windows_snippet_path =  'C://Users//kry127//Desktop//MILAN//asm//core_snippet.asm'
-const linker_path =  'C://Users//kry127//Desktop//MILAN//asm//linker.bat'
+// other options get from config file
+const src_ext = config.extensions.src_ext
+const asm_ext = config.extensions.asm_ext
+const exe_ext = config.extensions.exe_ext
+const assembly_snippet_path = config.assembly_snippet_path
+const linker_path = config.linker_path
 
 // language keywords description
 var types = ["BYTE", "WORD", "INT", "FLOAT", "STRING"]
@@ -1719,7 +1721,7 @@ wtf = semanticTreeBuilder(wtf.node);
 // compilation of semantic tree into assembly code (vartable + consttable + program)
 var assembly = astAssembly(wtf)
 // then finally IO operations on snippet and so on
-assembleCode(windows_snippet_path,
+assembleCode(assembly_snippet_path,
              folder_path + file_name + asm_ext
     , assembly[0], assembly[1], assembly[2])
 // call linker to link up
