@@ -8,6 +8,7 @@ if (process.argv.length != "2") {
     console.log(`The file [program_name].mil is the input file for the compiler.\
 Files [program_name].asm, [program_name].o and [program_name].exe are generated \
 during compilation process`)
+    process.exit(0)
 }
 
 // project structure variables
