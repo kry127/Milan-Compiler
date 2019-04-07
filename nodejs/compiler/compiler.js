@@ -1727,14 +1727,17 @@ assembleCode(assembly_snippet_path,
 // call linker to link up
 // https://stackoverflow.com/questions/5775088/how-to-execute-an-external-program-from-within-node-js
 var spawn = require('child_process').spawn;
-var prc = spawn(linker_path, [folder_path, file_name]);
+var path = require('path')
+var prc = spawn(path.basename(linker_path), [folder_path, file_name], {cwd: path.dirname(linker_path)});
 //noinspection JSUnresolvedFunction
 prc.stdout.setEncoding('utf8');
-prc.stdout.on('data', function (data) {
+var printer = function (data) {
     var str = data.toString()
     var lines = str.split(/(\r?\n)/g);
     console.log(lines.join(""));
-});
+};
+prc.stdout.on('data', printer);
+prc.stderr.on('data', printer);
 
 prc.on('close', function (code) {
     // check linker return code
