@@ -1,9 +1,10 @@
 // node.js dependencies
 const fs = require('fs');
 const URL = require('url').URL;
+
 // project structure variables
-const folder_path = 'C://Users//kry127//Desktop//MILAN//milan//func_call//'
-const file_name = "factorial_recursion"
+const folder_path = process.cwd();
+const file_name = process.argv[1];
 const src_ext = '.mil'
 const asm_ext = '.asm'
 const exe_ext = ".exe"
