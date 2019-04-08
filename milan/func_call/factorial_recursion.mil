@@ -1,6 +1,6 @@
 BEGIN
     PRINTLN("Hello, world! Calculating factorial using recursion :)");
-    FUNCTION fact(n: INT) : INT
+    FUNCTION fact(n: INT = 0) : INT
     BEGIN
         IF (n <= 1) THEN
             1
@@ -19,5 +19,5 @@ BEGIN
         n := READ();
     OD
     PRINT('The factorial is n!=');
-    PRINTLN(fact());
+    PRINTLN(fact(n));
 END
